@@ -33,13 +33,13 @@ invariantOptions()
 MooseEnum
 cylindricalOptions()
 {
-  return MooseEnum("AxialStress HoopStress RadialStress");
+  return MooseEnum("CylindricalAxialStress CylindricalHoopStress CylindricalRadialStress CylindricalRadialHoopStress CylindricalRadialAxialStress CylindricalHoopAxialStress");
 }
 
 MooseEnum
 sphericalOptions()
 {
-  return MooseEnum("HoopStress RadialStress");
+  return MooseEnum("SphericalAxialStress SphericalHoopStress SphericalRadialStress SphericalRadialHoopStress SphericalRadialAxialStress SphericalHoopAxialStress");
 }
 
 void

@@ -16,6 +16,7 @@
 #include "RankTwoTensor.h"
 #include "MooseError.h"
 #include "MooseUtils.h"
+#include "ColumnMajorMatrix.h"
 
 namespace RankTwoScalarTools
 {
@@ -23,7 +24,6 @@ namespace RankTwoScalarTools
  * Return the scalar_type MooseEnum
  */
 MooseEnum scalarOptions();
-
 MooseEnum invariantOptions();
 MooseEnum cylindricalOptions();
 MooseEnum sphericalOptions();
@@ -48,15 +48,22 @@ enum class InvariantType
 
 enum class CylindricalComponent
 {
-  AxialStress,
-  HoopStress,
-  RadialStress
+  CylindricalAxialStress,
+  CylindricalHoopStress,
+  CylindricalRadialStress,
+  CylindricalRadialHoopStress,
+  CylindricalRadialAxialStress,
+  CylindricalHoopAxialStress
 };
 
 enum class SphericalComponent
 {
-  HoopStress,
-  RadialStress
+  SphericalAxialStress,
+  SphericalHoopStress,
+  SphericalRadialStress,
+  SphericalRadialHoopStress,
+  SphericalRadialAxialStress,
+  SphericalHoopAxialStress
 };
 
 /*
@@ -285,13 +292,13 @@ minPrincipal(const RankTwoTensorTempl<T> & r2tensor, Point & direction)
  * The axial stress is the scalar component of the stress tensor in an user-defined
  * direction; the axis direction is specified by inputing two points.
  * axial-stress = axis^T_i * \sigma_{ij} * axis_j
- * @param point1 The starting point of the rotation axis for a cylinderical system
+ * @param point1 The starting point of the rotation axis for a cylindrical system
  * @param point2 The end point of the rotation axis
  * @param direction The direction vector in which the scalar stress value is calculated.
  */
 template <typename T>
 T
-axialStress(const RankTwoTensorTempl<T> & stress,
+cylindricalAxialStress(const RankTwoTensorTempl<T> & stress,
             const Point & point1,
             const Point & point2,
             Point & direction)
@@ -311,7 +318,7 @@ axialStress(const RankTwoTensorTempl<T> & stress,
  * This method is a helper method for the hoopStress and radialStress methods to
  * calculate the unit position vector which is normal to the user supplied axis
  * of rotation; the rotation axis direction is specified by inputing two points.
- * @param point1 The starting point of the rotation axis for a cylinderical system
+ * @param point1 The starting point of the rotation axis for a cylinrical system
  * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param normalPosition The vector from the current point that is normal to the rotation axis
@@ -326,14 +333,14 @@ void normalPositionVector(const Point & point1,
  * hoop-stress = z^T_i * \sigma_{ij} * z_j
  * where z is defined as the cross of the user-defined (via input points) axis
  * of rotation and the normal from the current position to the axis of rotation.
- * @param point1 The starting point of the rotation axis for a cylinderical system
+ * @param point1 The starting point of the rotation axis for a cylindrical system
  * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param direction The direction vector in which the scalar stress value is calculated.
  */
 template <typename T>
 T
-hoopStress(const RankTwoTensorTempl<T> & stress,
+cylindricalHoopStress(const RankTwoTensorTempl<T> & stress,
            const Point & point1,
            const Point & point2,
            const Point & curr_point,
@@ -359,14 +366,14 @@ hoopStress(const RankTwoTensorTempl<T> & stress,
  * radial_stress = normal^T_i * \sigma_{ij} * normal_j
  * where normal is the position vector of the current point that is normal to
  * the user-defined axis of rotation; the axis direction is specified with two points.
- * @param point1 The starting point of the rotation axis for a cylinderical system
+ * @param point1 The starting point of the rotation axis for a cylindrical system
  * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param direction The direction vector in which the scalar stress value is calculated.
  */
 template <typename T>
 T
-radialStress(const RankTwoTensorTempl<T> & stress,
+cylindricalRadialStress(const RankTwoTensorTempl<T> & stress,
              const Point & point1,
              const Point & point2,
              const Point & curr_point,
@@ -384,87 +391,363 @@ radialStress(const RankTwoTensorTempl<T> & stress,
   return radial_stress;
 }
 
-/* The radial stress is calculated as
- * radial_stress = radial^T_i * \sigma_{ij} * radial_j
- * where normal is the position vector of the current point that is normal to
- * the user-defined axis of rotation;
- * @param center The center point of the spherical system
+/*
+ * This method is a helper method for the radialHoopStress, radialAxialStress, and hoopAxialStress methods to
+ * calculate the rotation matrix
+ * the rotation matrix Q has the form
+ * [Q] = [cos(t) -sin(t) 0
+ *        sin(t)  cos(t) 0
+ *        0       0      1]
+ * where t is the angle 
+ * the transformed stress matrix has the form:
+ * [T_cylindrical] = [Q_transpose][T_cartesian][Q]
+ */
+void setRotationMatrix(const RealVectorValue & outwardnormal,
+                       const RealVectorValue & axialVector,
+                       RankTwoTensor & rotationMatrix,
+                       const bool transpose);
+
+/**
+ * radial-hoop stress
+ * @param point1 The starting point of the rotation axis for a cylindrical system
+ * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param direction The direction vector in which the scalar stress value is calculated.
  */
+
 template <typename T>
 T
-radialStress(const RankTwoTensorTempl<T> & stress,
-             const Point & center,
-             const Point & curr_point,
-             Point & direction)
+cylindricalRadialHoopStress(const RankTwoTensorTempl<T> & stress,
+                 const Point & point1,
+                 const Point & point2,
+                 const Point & curr_point,
+                 Point & direction)
 {
-  Point radial = curr_point - center;
-  radial /= radial.norm();
+  Point radial_norm;
+  normalPositionVector(point1, point2, curr_point, radial_norm);
 
-  // Compute the scalar stress component in the radial direction
-  T radial_stress = radial * (stress * radial);
+  Point axis_rotation = point2 - point1;
+  Point axial_norm = axis_rotation / axis_rotation.norm();
 
-  direction = radial;
+  RankTwoTensorTempl<T> rotation_matrix;
+  setRotationMatrix(radial_norm, axial_norm, rotation_matrix, false);
 
-  return radial_stress;
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  direction = axial_norm;
+
+  return stress_tensor(0, 1);
 }
 
-/* The hoop stress is calculated as
- * hoop_stress = tangential^T_i * \sigma_{ij} * tangential_j
- * where tangential is tangential direction at the current point in the spherical system;
- * @param center The center point of the spherical system
+/**
+ * radial-axial stress
+ * @param point1 The starting point of the rotation axis for a cylindrical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+
+template <typename T>
+T
+cylindricalRadialAxialStress(const RankTwoTensorTempl<T> & stress,
+                 const Point & point1,
+                 const Point & point2,
+                 const Point & curr_point,
+                 Point & direction)
+{
+  Point radial_norm;
+  normalPositionVector(point1, point2, curr_point, radial_norm);
+
+  Point axis_rotation = point2 - point1;
+  Point axial_norm = axis_rotation / axis_rotation.norm();
+
+  RankTwoTensorTempl<T> rotation_matrix;
+  setRotationMatrix(radial_norm, axial_norm, rotation_matrix, false);
+
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  direction = axial_norm;
+
+  return stress_tensor(0, 2);
+}
+
+/**
+ * hoop-axial stress
+ * @param point1 The starting point of the rotation axis for a cylindrical system
+ * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param direction The direction vector in which the scalar stress value is calculated.
  */
 template <typename T>
 T
-hoopStress(const RankTwoTensorTempl<T> & stress,
-           const Point & center,
-           const Point & curr_point,
-           Point & direction)
+cylindricalHoopAxialStress(const RankTwoTensorTempl<T> & stress,
+                 const Point & point1,
+                 const Point & point2,
+                 const Point & curr_point,
+                 Point & direction)
 {
-  Point radial = curr_point - center;
-  Real r = radial.norm();
-  radial /= r;
+  Point radial_norm;
+  normalPositionVector(point1, point2, curr_point, radial_norm);
 
-  // Given normal vector N=(n1,n2,n3) and current point C(c1,c2,c3), the tangential plane is then
-  // defined as n1(x-c1) + n2(y-c2) + n3(z-c3)=0. Let us assume n1!=0, the arbitrary point P on this
-  // plane can be taken as P(x,c2+r,c3+r) where r is the radius. The x can be solved as x =
-  // -r(n2+n3)/n1 + c1. The tangential vector PC is given as P-C.
+  Point axis_rotation = point2 - point1;
+  Point axial_norm = axis_rotation / axis_rotation.norm();
 
-  Point tangential;
+  RankTwoTensorTempl<T> rotation_matrix;
+  setRotationMatrix(radial_norm, axial_norm, rotation_matrix, false);
 
-  if (!MooseUtils::absoluteFuzzyEqual(radial(0), 0.0))
-  {
-    Real x = curr_point(0) - (radial(1) + radial(2)) * r / radial(0);
-    tangential = Point(x, curr_point(1) + r, curr_point(2) + r) - curr_point;
-  }
-  else if (!MooseUtils::absoluteFuzzyEqual(radial(1), 0.0))
-  {
-    Real y = curr_point(1) - (radial(0) + radial(2)) * r / radial(1);
-    tangential = Point(curr_point(0) + r, y, curr_point(2) + r) - curr_point;
-  }
-  else if (!MooseUtils::absoluteFuzzyEqual(radial(1), 0.0))
-  {
-    Real z = curr_point(2) - (radial(0) + radial(1)) * r / radial(2);
-    tangential = Point(curr_point(0) + r, curr_point(1) + r, z) - curr_point;
-  }
-  else
-    mooseError("In Hoop stress calculation for spherical geometry, the current (quadracture) point "
-               "is likely to be at the center. ");
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
 
-  tangential /= tangential.norm();
+  direction = axial_norm;
 
-  // Compute the scalar stress component in the hoop direction
-  T hoop_stress = 0.0;
-  for (unsigned int i = 0; i < 3; ++i)
-    for (unsigned int j = 0; j < 3; ++j)
-      hoop_stress += tangential(j) * stress(j, i) * tangential(i);
+  return stress_tensor(1, 2);
+}
 
-  direction = tangential;
+/**
+ * Calculate 'axial' stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * The stress tensor has axial direction aligned with the z-axis
+ * The stress tensor is rotated to align the axial direction with the user defined axis of rotation 
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalAxialStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
 
-  return hoop_stress;
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(1, 1);
+}
+
+/**
+ * Calculate hoop stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalHoopStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
+
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(2, 2);
+}
+
+/**
+ * Calculate radial stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalRadialStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
+
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(0, 0);
+}
+
+/**
+ * Calculate radial-hoop stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalRadialHoopStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
+
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(2, 0);
+}
+
+/**
+ * Calculate radial-axial stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalRadialAxialStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
+
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(1, 0);
+}
+
+/**
+ * Calculate hoop-axial stress in spherical coordinates
+ * Rotation matrix Q is defined according to the website below
+ * https://www.brown.edu/Departments/Engineering/Courses/En221/Notes/Polar_Coords/Polar_Coords.htm
+ * @param point1 The starting point of the rotation axis for a spherical system
+ * @param point2 The end point of the rotation axis
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+sphericalHoopAxialStress(const RankTwoTensorTempl<T> & stress,
+              const Point & point1,
+              const Point & point2,
+              const Point & curr_point,
+              Point & direction)
+{
+  Point radial = curr_point - point1;
+  radial /= radial.norm();
+  // Real R = sqrt(radial(0)*radial(0) + radial(1)*radial(1) + radial(2)*radial(2));
+  Real theta = acos(radial(2));
+  Real phi = atan(radial(1)/radial(0));
+
+  // rotation matrix, assuming axial direction is along z-axis
+  RankTwoTensorTempl<T> rotation_matrix;
+  rotation_matrix(0, 0) = sin(theta)*cos(phi);
+  rotation_matrix(0, 1) = cos(theta)*cos(phi);
+  rotation_matrix(0, 2) = -sin(phi);
+  rotation_matrix(1, 0) = sin(theta)*sin(phi);
+  rotation_matrix(1, 1) = cos(theta)*sin(phi);
+  rotation_matrix(1, 2) = cos(phi);
+  rotation_matrix(2, 0) = cos(theta);
+  rotation_matrix(2, 1) = -sin(theta);
+  rotation_matrix(2, 2) = 0.0;
+
+  // stress tensor in spherical coordinates with axial direction along z-axis
+  RankTwoTensorTempl<T> stress_tensor = rotation_matrix.transpose() * stress * rotation_matrix;
+
+  return stress_tensor(2, 1);
 }
 
 /*
@@ -513,7 +796,7 @@ stressIntensity(const RankTwoTensorTempl<T> & stress)
 
 /*
  * Return scalar quantity of a rank two tensor based on the user specified scalar_type
- * @param point1 The starting point of the rotation axis for a cylinderical system
+ * @param point1 The starting point of the rotation axis for a cylindrical system
  * @param point2 The end point of the rotation axis
  * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
  * @param direction The direction vector in which the scalar stress value is calculated
@@ -557,11 +840,11 @@ getQuantity(const RankTwoTensorTempl<T> & tensor,
     case 10:
       return thirdInvariant(tensor);
     case 11:
-      return axialStress(tensor, point1, point2, direction);
+      return cylindricalAxialStress(tensor, point1, point2, direction);
     case 12:
-      return hoopStress(tensor, point1, point2, curr_point, direction);
+      return cylindricalHoopStress(tensor, point1, point2, curr_point, direction);
     case 13:
-      return radialStress(tensor, point1, point2, curr_point, direction);
+      return cylindricalRadialStress(tensor, point1, point2, curr_point, direction);
     case 14:
       return triaxialityStress(tensor);
     case 15:
@@ -570,6 +853,24 @@ getQuantity(const RankTwoTensorTempl<T> & tensor,
       return maxShear(tensor);
     case 17:
       return stressIntensity(tensor);
+    case 18:
+      return cylindricalRadialHoopStress(tensor, point1, point2, curr_point, direction);
+    case 19:
+      return cylindricalRadialAxialStress(tensor, point1, point2, curr_point, direction);
+    case 20:
+      return cylindricalHoopAxialStress(tensor, point1, point2, curr_point, direction);
+    case 21:
+      return sphericalAxialStress(tensor, point1, point2, curr_point, direction);
+    case 22:
+      return sphericalHoopStress(tensor, point1, point2, curr_point, direction);
+    case 23:
+      return sphericalRadialStress(tensor, point1, point2, curr_point, direction);
+    case 24:
+      return sphericalRadialHoopStress(tensor, point1, point2, curr_point, direction);
+    case 25:
+      return sphericalRadialAxialStress(tensor, point1, point2, curr_point, direction);
+    case 26:
+      return sphericalHoopAxialStress(tensor, point1, point2, curr_point, direction);
     default:
       mooseError("RankTwoScalarTools Error: invalid scalar type");
   }
@@ -586,12 +887,18 @@ getCylindricalComponent(const RankTwoTensorTempl<T> & tensor,
 {
   switch (scalar_type)
   {
-    case CylindricalComponent::AxialStress:
-      return axialStress(tensor, point1, point2, direction);
-    case CylindricalComponent::HoopStress:
-      return hoopStress(tensor, point1, point2, curr_point, direction);
-    case CylindricalComponent::RadialStress:
-      return radialStress(tensor, point1, point2, curr_point, direction);
+    case CylindricalComponent::CylindricalAxialStress:
+      return cylindricalAxialStress(tensor, point1, point2, direction);
+    case CylindricalComponent::CylindricalHoopStress:
+      return cylindricalHoopStress(tensor, point1, point2, curr_point, direction);
+    case CylindricalComponent::CylindricalRadialStress:
+      return cylindricalRadialStress(tensor, point1, point2, curr_point, direction);
+    case CylindricalComponent::CylindricalRadialHoopStress:
+      return cylindricalRadialHoopStress(tensor, point1, point2, curr_point, direction);
+    case CylindricalComponent::CylindricalRadialAxialStress:
+      return cylindricalRadialAxialStress(tensor, point1, point2, curr_point, direction);
+    case CylindricalComponent::CylindricalHoopAxialStress:
+      return cylindricalHoopAxialStress(tensor, point1, point2, curr_point, direction);
     default:
       mooseError("RankTwoCylindricalComponent Error: scalar type invalid");
   }
@@ -601,16 +908,25 @@ template <typename T>
 T
 getSphericalComponent(const RankTwoTensorTempl<T> & tensor,
                       const SphericalComponent & scalar_type,
-                      const Point & center,
+                      const Point & point1,
+                      const Point & point2,
                       const Point & curr_point,
                       Point & direction)
 {
   switch (scalar_type)
   {
-    case SphericalComponent::HoopStress:
-      return hoopStress(tensor, center, curr_point, direction);
-    case SphericalComponent::RadialStress:
-      return radialStress(tensor, center, curr_point, direction);
+    case SphericalComponent::SphericalAxialStress:
+      return sphericalAxialStress(tensor, point1, point2, curr_point, direction);
+    case SphericalComponent::SphericalHoopStress:
+      return sphericalHoopStress(tensor, point1, point2, curr_point, direction);
+    case SphericalComponent::SphericalRadialStress:
+      return sphericalRadialStress(tensor, point1, point2, curr_point, direction);
+    case SphericalComponent::SphericalRadialHoopStress:
+      return sphericalRadialHoopStress(tensor, point1, point2, curr_point, direction);
+    case SphericalComponent::SphericalRadialAxialStress:
+      return sphericalRadialAxialStress(tensor, point1, point2, curr_point, direction);
+    case SphericalComponent::SphericalHoopAxialStress:
+      return sphericalHoopAxialStress(tensor, point1, point2, curr_point, direction);
     default:
       mooseError("RankTwoSphericalComponent Error: scalar type invalid");
   }

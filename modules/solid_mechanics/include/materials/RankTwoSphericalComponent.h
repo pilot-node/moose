@@ -33,8 +33,10 @@ protected:
 
   RankTwoScalarTools::SphericalComponent _spherical_component;
 
-  /// coordinate of the center
-  const Point _center;
+  /// Point 1 used to determine the axis of rotation
+  const Point _spherical_axis_point1;
+  /// Point 2 used to determine the axis of rotation
+  const Point _spherical_axis_point2;
 };
 
 typedef RankTwoSphericalComponentTempl<false> RankTwoSphericalComponent;

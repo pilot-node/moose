@@ -23,14 +23,18 @@ RankTwoSphericalComponentTempl<is_ad>::validParams()
   params.addClassDescription(
       "Compute components of a rank-2 tensor in a spherical coordinate system");
   params.addRequiredParam<MaterialPropertyName>("rank_two_tensor",
-                                                "The rank two material tensor name");
+                                                "The rank two material property tensor name");
   params.addRequiredParam<MaterialPropertyName>(
       "property_name", "Name of the material property computed by this model");
-  MooseEnum sphericalTypes("HoopStress RadialStress");
+  MooseEnum sphericalTypes("SphericalAxialStress SphericalHoopStress SphericalRadialStress SphericalRadialHoopStress SphericalRadialAxialStress SphericalHoopAxialStress");
   params.addParam<MooseEnum>(
       "spherical_component", sphericalTypes, "Type of spherical scalar output");
-  params.addParam<Point>("spherical_center_point",
-                         "Center point of the spherical coordinate system.");
+  params.addParam<Point>(
+      "spherical_axis_point1",
+      "Start point for determining axis of rotation for spherical stress/strain components");
+  params.addParam<Point>(
+      "spherical_axis_point2",
+      "End point for determining axis of rotation for spherical stress/strain components");
   return params;
 }
 
@@ -42,8 +46,12 @@ RankTwoSphericalComponentTempl<is_ad>::RankTwoSphericalComponentTempl(
     _property(declareGenericProperty<Real, is_ad>("property_name")),
     _spherical_component(getParam<MooseEnum>("spherical_component")
                              .template getEnum<RankTwoScalarTools::SphericalComponent>()),
-    _center(isParamValid("spherical_center_point") ? getParam<Point>("spherical_center_point")
-                                                   : Point(0, 0, 0))
+    _spherical_axis_point1(isParamValid("spherical_axis_point1")
+                                 ? getParam<Point>("spherical_axis_point1")
+                                 : Point(0, 0, 0)),
+    _spherical_axis_point2(isParamValid("spherical_axis_point2")
+                                 ? getParam<Point>("spherical_axis_point2")
+                                 : Point(0, 1, 0))
 {
 }
 
@@ -62,7 +70,8 @@ RankTwoSphericalComponentTempl<is_ad>::computeQpProperties()
 
   _property[_qp] = RankTwoScalarTools::getSphericalComponent(MetaPhysicL::raw_value(_tensor[_qp]),
                                                              _spherical_component,
-                                                             _center,
+                                                             _spherical_axis_point1,
+                                                             _spherical_axis_point2,
                                                              _q_point[_qp],
                                                              dummy_direction);
 }

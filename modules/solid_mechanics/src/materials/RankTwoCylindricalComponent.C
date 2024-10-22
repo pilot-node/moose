@@ -26,7 +26,7 @@ RankTwoCylindricalComponentTempl<is_ad>::validParams()
                                                 "The rank two material property tensor name");
   params.addRequiredParam<MaterialPropertyName>(
       "property_name", "Name of the material property computed by this model");
-  MooseEnum cylindricalTypes("AxialStress HoopStress RadialStress");
+  MooseEnum cylindricalTypes("CylindricalAxialStress CylindricalHoopStress CylindricalRadialStress CylindricalRadialHoopStress CylindricalRadialAxialStress CylindricalHoopAxialStress");
   params.addParam<MooseEnum>(
       "cylindrical_component", cylindricalTypes, "Type of cylindrical scalar output");
   params.addParam<Point>(
