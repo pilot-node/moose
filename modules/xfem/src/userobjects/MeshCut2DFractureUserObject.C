@@ -131,7 +131,7 @@ MeshCut2DFractureUserObject::findActiveBoundaryGrowth()
                _original_and_current_front_node_ids.size());
 
   if (_k_critical_vpp && ((_k_critical_vpp->size() != _original_and_current_front_node_ids.size())))
-    mooseError("k_critical_vectorpostprocessor must have the same number of crack front points as "
+    mooseError("k_critical_vectorpostprocessor must have the same number of crack front points as ",
                "CrackFrontDefinition.",
                "\n  k_critical_vectorpostprocessor size = ",
                _k_critical_vpp->size(),
@@ -149,12 +149,34 @@ MeshCut2DFractureUserObject::findActiveBoundaryGrowth()
       Real k_squared = _ki_vpp->at(i) * _ki_vpp->at(i) + _kii_vpp->at(i) * _kii_vpp->at(i);
       if (k_squared > (k_crit * k_crit) && _ki_vpp->at(i) > 0)
       {
-        // growth direction in crack front coord (cfc) system based on the  max hoop stress
-        // criterion
+        // growth direction in crack front coord (cfc) system based on the max hoop stress criterion
+        // Ref "Ceramic nuclear fuel fracture modeling with the extended finite element method" by
+        // W. Jiang, B. Spencer, and J. Dolbow
+        // Equation 6
         Real ki = _ki_vpp->at(i);
         Real kii = _kii_vpp->at(i);
-        Real sqrt_k = std::sqrt(ki * ki + kii * kii);
-        Real theta = 2 * std::atan((ki - sqrt_k) / (4 * kii));
+        Real sqrt_k = std::sqrt(ki * ki + 8 * kii * kii);
+        Real theta_m = 2 * std::atan((ki - sqrt_k) / (4 * kii)); // a more stable implementation
+        Real theta_p = 2 * std::atan((ki + sqrt_k) / (4 * kii)); // a more stable implementation
+
+        // check sigma_tt
+        // Ref "Ceramic nuclear fuel fracture modeling with the extended finite element method" by
+        // W. Jiang, B. Spencer, and J. Dolbow
+        // Equation 5
+        Real _r = _growth_increment;
+        Real _sigma_tt_m = (ki / (4 * std::sqrt(2 * M_PI * _r))) *
+                               (3 * std::cos(theta_m / 2) + std::cos(3 * theta_m / 2)) +
+                           (kii / (4 * std::sqrt(2 * M_PI * _r))) *
+                               (-3 * std::sin(theta_m / 2) - 3 * std::sin(3 * theta_m / 2));
+        Real _sigma_tt_p = (ki / (4 * std::sqrt(2 * M_PI * _r))) *
+                               (3 * std::cos(theta_p / 2) + std::cos(3 * theta_p / 2)) +
+                           (kii / (4 * std::sqrt(2 * M_PI * _r))) *
+                               (-3 * std::sin(theta_p / 2) - 3 * std::sin(3 * theta_p / 2));
+        Real theta;
+        if (_sigma_tt_m > _sigma_tt_p)
+          theta = theta_m;
+        else
+          theta = theta_p;
         RealVectorValue dir_cfc;
         dir_cfc(0) = std::cos(theta);
         dir_cfc(1) = std::sin(theta);
